@@ -1,122 +1,215 @@
-const { Command } = require('commander');
-const program = new Command();
-const path = require('path');
-const fs = require('fs');
-const multer = require('multer');
-const upload = multer();
-
-program
-  .option('-h, --host <type>', 'server host')
-  .option('-p, --port <type>', 'server port')
-  .option('-c, --cache <path>', 'cache directory')
-  .parse(process.argv);
-
-const option = program.opts();
-
-if (!option.host) {
-    console.error("Please, specify the server address");
-    process.exit(1);
-}
-if (!option.port) {
-    console.error("Please, specify the server port");
-    process.exit(1);
-}
-if (!option.cache) {
-    console.error("Please, specify the path to the directory that will contain cached files");
-    process.exit(1);
-}
-const { host, port, cache } = program.opts();
-console.log(`Host: ${host}, Port: ${port}, Cache Directory: ${cache}`);
-
-const cachePath = path.resolve(option.cache);
-if (!fs.existsSync(cachePath)) {
-    fs.mkdirSync(cachePath, { recursive: true });
-    console.log(`Cache directory created at: ${cachePath}`);
-} else {
-    console.log(`Cache directory already exists at: ${cachePath}`);
-}
-
-const http = require('http');
+// const swaggerJsdoc = require('swagger-jsdoc');
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const swaggerDocs = require('./swagger');
+
 const app = express();
-const server = http.createServer(app);
+const PORT = process.env.PORT || 3001;
+const NOTES_DIR = path.join(__dirname, 'notes');
+
 
 app.use(express.json());
-app.use(express.text());
 
-server.listen(option.port, option.host, () => {
-    console.log(`Server is running on http://${option.host}:${option.port}`);
+app.use(express.urlencoded({ extended: true }));
+
+if (!fs.existsSync(NOTES_DIR)) {
+  fs.mkdirSync(NOTES_DIR);
+}
+
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Welcome message
+ *     responses:
+ *       200:
+ *         description: Returns a welcome message.
+ */
+app.get('/', (req, res) => {
+  debugger; // Брекпоінт: Перевірка запитів до цього маршруту
+  res.send('Welcome to my API!');
 });
 
-app.get('/notes/:noteName', (req, res) => {
-    const notePath = path.join(option.cache, req.params.noteName);
-
-    if (!fs.existsSync(notePath)) {
-        return res.status(404).send('Not found');
-    }
-
-    const noteText = fs.readFileSync(notePath, 'utf8');
-    res.send(noteText);
+/**
+ * @swagger
+ * /notes/{name}:
+ *   get:
+ *     summary: Get a note by name
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the note
+ *     responses:
+ *       200:
+ *         description: The content of the note.
+ *       404:
+ *         description: Note not found.
+ */
+app.get('/notes/:name', (req, res) => {
+  debugger; //  Перевірка параметра name
+  const noteName = req.params.name;
+  const notePath = path.join(NOTES_DIR, noteName + '.txt');
+  
+  if (!fs.existsSync(notePath)) {
+    return res.status(404).send('Not found');
+  }
+  
+  const noteContent = fs.readFileSync(notePath, 'utf-8');
+  res.send(noteContent);
 });
 
-app.put('/notes/:noteName', (req, res) => {
-    const notePath = path.join(option.cache, req.params.noteName);
+/**
+ * @swagger
+ * /notes/{name}:
+ *   put:
+ *     summary: Update a note by name
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the note
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               text:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Note updated.
+ *       404:
+ *         description: Note not found.
+ *       400:
+ *         description: Bad request.
+ */
+app.put('/notes/:name', (req, res) => {
+  debugger; //  Перевірка запиту PUT
+  
+  const noteName = req.params.name;
+  const notePath = path.join(NOTES_DIR, noteName + '.txt');
 
-    if (!fs.existsSync(notePath)) {
-        return res.status(404).send('Not found');
-    }
+  if (!fs.existsSync(notePath)) {
+    return res.status(404).send('Not found');
+  }
 
-    const newText = req.body; 
-    if (!newText) {
-        return res.status(400).send('Text is required');
-    }
+  const newText = req.body.text;
 
-    try {
-        fs.writeFileSync(notePath, newText);
-        res.send('Note updated');
-    } catch (error) {
-        console.error('Error updating note:', error);
-        res.status(500).send('Error updating note');
-    }
+  if (typeof newText === 'undefined') {
+    return res.status(400).send('Bad request: text is undefined');
+  }
+
+  fs.writeFileSync(notePath, newText);
+  res.send('Updated');
 });
 
-app.delete('/notes/:noteName', (req, res) => {
-    const notePath = path.join(option.cache, req.params.noteName);
+/**
+ * @swagger
+ * /notes/{name}:
+ *   delete:
+ *     summary: Delete a note by name
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the note
+ *     responses:
+ *       200:
+ *         description: Note deleted.
+ *       404:
+ *         description: Note not found.
+ */
+app.delete('/notes/:name', (req, res) => {
+  debugger; // Перевірка перед видаленням
+  const noteName = req.params.name;
+  const notePath = path.join(NOTES_DIR, noteName + '.txt');
+  
+  if (!fs.existsSync(notePath)) {
+    return res.status(404).send('Not found');
+  }
 
-    if (!fs.existsSync(notePath)) {
-        return res.status(404).send('Not found');
-    }
-
-    fs.unlinkSync(notePath);
-    res.send('Note deleted');
+  fs.unlinkSync(notePath);
+  res.send('Deleted');
 });
 
+/**
+ * @swagger
+ * /notes:
+ *   get:
+ *     summary: Get all notes
+ *     responses:
+ *       200:
+ *         description: A list of notes.
+ */
 app.get('/notes', (req, res) => {
-    const files = fs.readdirSync(option.cache);
-    const notes = files.map(fileName => {
-        const text = fs.readFileSync(path.join(option.cache, fileName), 'utf8');
-        return { name: fileName, text };
-    });
+  debugger; // Аналіз списку нотаток
+  const notes = fs.readdirSync(NOTES_DIR).map(file => {
+    const notePath = path.join(NOTES_DIR, file);
+    if (fs.statSync(notePath).isFile()) {
+      const name = path.basename(file, '.txt');
+      const text = fs.readFileSync(notePath, 'utf-8');
+      return { name, text };
+    }
+  }).filter(note => note !== undefined);
 
-    res.json(notes);
+  res.status(200).json(notes);
 });
 
-app.post('/write', upload.none(), (req, res) => {
-    const noteName = req.body.note_name;
-    const noteText = req.body.note;
-    const notePath = path.join(option.cache, noteName);
-    if (fs.existsSync(notePath)) {
-        return res.status(400).send('Note already exists');
-    }
-    try {
-        fs.writeFileSync(notePath, noteText);
-        res.status(201).send('Note created');
-    } catch (error) {
-        console.error('Error writing note:', error);
-        res.status(500).send('Error creating note');
-    }
+const upload = multer(); 
+/**
+ * @swagger
+ * /write:
+ *   post:
+ *     summary: Create a new note
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               note_name:
+ *                 type: string
+ *               note:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Note created.
+ *       400:
+ *         description: Note already exists.
+ */
+app.post('/write', express.urlencoded({ extended: true }), (req, res) => {
+  console.log(req.body); // Діагностика: перевірка даних
+  const noteName = req.body.note_name;
+  const noteText = req.body.note;
+
+  if (!noteName || !noteText) {
+    return res.status(400).send('Bad request: missing note_name or note');
+  }
+
+  const notePath = path.join(NOTES_DIR, noteName + '.txt');
+  if (fs.existsSync(notePath)) {
+    return res.status(400).send('Note already exists');
+  }
+
+  fs.writeFileSync(notePath, noteText);
+  res.status(201).send('Created');
 });
 
-app.get('/UploadForm.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'UploadForm.html'));
+
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+  swaggerDocs(app, PORT);
 });
